@@ -8,5 +8,13 @@ opencv-python<br>
 numpy<br>
 
 ### 使用说明 help:<br>
-使用`python svm.py`查看使用说明并使用.<br>
-try `python svm.py` to get help
+使用
+```Bash
+python svm.py
+```
+查看使用说明并使用.<br>
+try 
+```Bash
+python svm.py
+```
+to get help
