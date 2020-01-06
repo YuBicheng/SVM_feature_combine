@@ -1,13 +1,18 @@
 #coding=utf-8
+#author 喻碧城(ybc_123@qq.com)
+#svm 特征拼接方法
+#env python2.7 numpy1.16.5 opencv4.1.2.30 不用严格遵循这个版本 用别的python版本和包版本，请自行修改差异出
+#要更改核函数以及参数请自行更改代码 如果需要加入新的特征提取方法，请保证函数输入为图像输出为定长numpy向量
 import cv2
 import numpy as np
 import random
 import os
+import sys
 
 #图片resize的目标大小
 size = (36,36)
 #svm保存文件和读取的文件名
-svm_data_name = "svm_data.xml"
+svm_data_name = "svm"
 #svm 参数c
 SVM_C = 1.5
 
@@ -32,10 +37,10 @@ def hog_feature(img):
     # nbins = 9
     # winStride = (8,8)
     # padding = (8,8)
-    winSize = (32,32)
-    blockSize = (16,16)
+    winSize = (36,36)
+    blockSize = (18,18)
     blockStride = (2,2)
-    cellSize = (4,4)
+    cellSize = (9,9)
     nbins = 9
     winStride = (1,1)
     padding = (0,0)
@@ -95,8 +100,8 @@ def hist_feature(img):
         for j in range(img.shape[1]):
             for c in range(3):
                 hist[c][img[i][j][c]] += 1
-    print hist.shape, hist.dtype
-    print hist
+    #print hist.shape, hist.dtype
+    #print hist
     result = hist.reshape(hist.shape[0]*hist.shape[1],)
     return result
 
@@ -111,17 +116,19 @@ opencv svm 输入 特征必须为float32
 lable 必须为 int32
 优先检查输入数据的类型。
 """
-def svm_train(input_data, lable):
+def svm_train(input_data, lable, name):
     svm = cv2.ml.SVM_create() #创建SVM model
     #属性设置
     svm.setType(cv2.ml.SVM_C_SVC)
     #svm 核函数设置 如果使用参数拼接方案线性核函数就足够了
     svm.setKernel(cv2.ml.SVM_LINEAR)
-    #svm 参数 c 正则项权重 防止过拟合
+    #svm
     svm.setC(SVM_C)
     #训练
     result = svm.train(input_data,cv2.ml.ROW_SAMPLE,lable)
-    svm.save(svm_data_name)
+    save_path = svm_data_name + '_' + name + ".xml"
+    svm.save(save_path)
+    print 'saved at:', save_path
 
 
 #svm预测函数
@@ -137,8 +144,36 @@ def svm_test(path, fuc_list):
             input_x = input_x.reshape((1, input_x.shape[0]))
             #print input_x.shape, input_x.dtype
             a,b = svm.predict(input_x)
-            print f,':', b
-    
+            print f,':', b[0][0]
+
+def show_acc(path, fuc_list, keyword,weights_file):
+    svm = cv2.ml.SVM_load(weights_file)
+    right_count = 0
+    all_count = 0
+    for root, dirs, files in os.walk(path):
+        for f in files:
+            all_count += 1
+            img_path = os.path.join(root, f)
+            img = cv2.imread(img_path, 1)
+            img = resize(img)
+            input_x = feature_conbine(fuc_list, img)
+            input_x = input_x.astype('float32')
+            input_x = input_x.reshape((1, input_x.shape[0]))
+            #print input_x.shape, input_x.dtype
+            a,b = svm.predict(input_x)
+            print f,':', b[0][0]
+            if keyword in f:
+                if b[0][0] == 0:
+                    right_count += 1
+            else:
+                if b[0][0] == 1:
+                    right_count += 1
+    print "pos label 0"
+    print "neg label 1"
+    print right_count, all_count
+    acc = float(right_count)/float(all_count)
+    print 'acc:', acc * 100, '%'
+
     
 
 
@@ -162,8 +197,8 @@ def data_reader(path, fuc_list):
                 temp = feature_conbine(fuc_list, img)
                 pos_feature = np.vstack((pos_feature, temp))
             pos_count += 1
-    print '正：', pos_count, pos_feature.shape
-    pos_lable = np.ones((pos_count,1), np.int32)
+    print 'pos_feature:', pos_count, pos_feature.shape
+    pos_lable = np.zeros((pos_count,1), np.int32)
 
     for root, dirs, files in os.walk(neg_path):
         for f in files:
@@ -176,8 +211,8 @@ def data_reader(path, fuc_list):
                 temp = feature_conbine(fuc_list, img)
                 neg_feature = np.vstack((neg_feature, temp))
             neg_count += 1
-    print '负：', neg_count, neg_feature.shape
-    neg_lable = np.zeros((neg_count,1), np.int32)
+    print 'neg_feature:', neg_count, neg_feature.shape
+    neg_lable = np.ones((neg_count,1), np.int32)
     #正负样本竖向拼接 制作训练集
     dataset = np.vstack((pos_feature, neg_feature))
     #opencv默认读图uint8需要转换为float32才能正常使用
@@ -185,6 +220,39 @@ def data_reader(path, fuc_list):
     #正负样本标签拼接 制作lable集label
     lable = np.vstack((pos_lable, neg_lable))
     return dataset, lable
+
+def main(argv):
+    if len(argv)==1:
+        print "please plus opt after command"
+        print '#train command:python svm.py    train    trainset_path    save_weights_name'
+        print '#exanple: python svm.py train D:\\dataset20\\dataset\\green green'
+        print '#test command:python svm.py    acc    weights_file_name    test_file_path    keyword_in_file_name'
+        print '#exanple:python svm.py acc svm_green.xml D:\\dataset20\\dataset\\green\\test green'
+        return False
+    # 红马甲hog+hist效果NO.1
+    feature_fuc_list = [hsv_feature, hist_feature]
+    #print feature_fuc_list
+    if argv[1]=='train':
+        train_path = argv[2]
+        name = argv[3]
+        d, l = data_reader(train_path, feature_fuc_list)
+        print d.shape, d.dtype, l.shape, l.dtype
+        svm_train(d, l, name)
+        print "svm train finished!"
+    elif argv[1] == 'test':
+        test_path = "D:\\dataset20\\dataset\\green\\test"
+        svm_test(test_path, feature_fuc_list)
+    elif argv[1] == 'acc':
+        weights_file = argv[2]
+        test_path = argv[3]
+        keyword = argv[4]
+        show_acc(test_path, feature_fuc_list, keyword, weights_file)
+    else:
+        print "wrong opt, check the opt!"
+        print '#train command:python    svm.py    train    trainset_path    save_weights_name'
+        print '#exanple: python svm.py train D:\\dataset20\\dataset\\green green'
+        print '#test command:python svm.py    acc    weights_file_name    test_file_path    keyword_in_file_name'
+        print '#exanple:python svm.py acc svm_green.xml D:\\dataset20\\dataset\\green\\test green'
 
 
 
@@ -221,12 +289,14 @@ if __name__=="__main__":
     #print features.shape
 
     #训练集读取测试、样例
-    feature_fuc_list = [hog_feature,lbp_feature]
-    d, l = data_reader("F:\\螺栓故障svm用图", feature_fuc_list)
-    print d.shape, d.dtype, l.shape, l.dtype
-    svm_train(d, l)
+    #feature_fuc_list = [lbp_feature]
+    # d, l = data_reader("D:\\dataset20\\dataset\\red", feature_fuc_list)
+    # print d.shape, d.dtype, l.shape, l.dtype
+    # svm_train(d, l)
+    # print "svm训练完成"
 
     # 预测测试、样例
-    test_path = "/home/junyingtianda/桌面/螺栓故障svm用图/test"
-    svm_test(test_path, feature_fuc_list)
+    # test_path = "D:\\dataset20\\dataset\\red\\test"
+    # svm_test(test_path, feature_fuc_list)
+    main(sys.argv)
 
