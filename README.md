@@ -18,3 +18,9 @@ try
 python svm.py
 ```
 to get help
+
+# 例子（example）<br>
+数据集制作请打卡dataset文件夹查看[readme.md](dataset/readme.md)
+if you want to make a dataset for your own,please open folder ***dataset***，and check [readme.md](dataset/readme.md)
+
+python svm.py ./dataset
